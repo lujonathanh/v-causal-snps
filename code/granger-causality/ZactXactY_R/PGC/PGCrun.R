@@ -9,12 +9,14 @@ expression<-data$expression
 n <- dim(expression)[1]
 T <- dim(expression)[2]
 
+
 for (p in 1:9)
 {
-    m <- T-p
+    
 
-    source("PGC.R")
-    B <- PairwiseGrangerRegress(expression, p);
+    library(vars)
+    var <- VAR(
+    grangertest()
 
     filename <- paste("PGC_p", p, ".mat", sep="_")
     writeMat(filename, B=B)
