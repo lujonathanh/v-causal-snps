@@ -68,7 +68,7 @@ def pairwise_granger_causality(i, j, model_order):
     SSE_ij = np.sum(np.power(target - pred_ij, 2))
 
 
-    #beta_i = clf_ij.coef_[0:lagged_i.shape[1]]
+    beta_i = clf_ij.coef_[0:lagged_i.shape[1]]
 
     # Formula is taken from: http://pages.uoregon.edu/aarong/teaching/G4075_Outline/node4.html
     # The variance explained by i itself compared to variance of just j
@@ -79,10 +79,11 @@ def pairwise_granger_causality(i, j, model_order):
 
     p_value = 1.0 - stats.f.cdf(F, model_order, len(target) - 2 * model_order - 1)
 
-    return p_value #, beta_i
+    return p_value, beta_i
 
 
-def pairwise_granger_causality_all(matr, model_order, use_processes=False, procnum=32):
+def pairwise_granger_causality_all(matr, pairs, model_order=2, use_processes=False, procnum=32,
+                                   add_ones=False):
     """
     Assume matr is an n by T matrix, where n is number of genes, T is # timepoints.
     """
@@ -90,9 +91,10 @@ def pairwise_granger_causality_all(matr, model_order, use_processes=False, procn
 
     p_matr = np.zeros(shape=(n,n))
 
-    #beta_matr = np.zeros(shape=(n,n,model_order))
+    beta_matr = np.zeros(shape=(n,n,model_order))
 
-    pairs = itertools.permutations(range(n), 2)
+    if pairs == None:
+       pairs = itertools.permutations(range(n), 2)
 
     if use_processes:
         pairs = list(pairs)
@@ -104,10 +106,10 @@ def pairwise_granger_causality_all(matr, model_order, use_processes=False, procn
         input_list = pairs
         input_index = 2
         partition_input_function = pac.partition_inputs
-        join_functions_dict = {0: join_pvalue_matrices}
+        join_functions_dict = {0: join_pvalue_matrices, 1: join_pvalue_matrices}
 
-        p_matr = pac.parallel_compute_new(function, args, input_list, input_index, partition_input_function,
-                                           join_functions_dict, number=procnum, multi_return_values=False)
+        p_matr, beta_matr = pac.parallel_compute_new(function, args, input_list, input_index, partition_input_function,
+                                           join_functions_dict, number=procnum, multi_return_values=True)
 
 
 
@@ -116,11 +118,12 @@ def pairwise_granger_causality_all(matr, model_order, use_processes=False, procn
     else:
         for pair in pairs:
             i, j = pair
-            p_matr[i][j] = pairwise_granger_causality(matr[i], matr[j], model_order)
+            p_matr[i][j], beta_matr[i][j] = pairwise_granger_causality(matr[i], matr[j], model_order)
 
-    p_matr += np.diagflat(np.ones(p_matr.shape[0]))
+    if add_ones:
+        p_matr += np.diagflat(np.ones(p_matr.shape[0]))
 
-    return p_matr
+    return (p_matr, beta_matr)
 
 def pairwise_granger_causality_process(matr, model_order, pairs):
     """Return a matrix of zeros with the causal p-values return for the pairs.
@@ -129,12 +132,14 @@ def pairwise_granger_causality_process(matr, model_order, pairs):
     n, T = np.array(matr).shape
 
     p_matr = np.zeros(shape=(n,n))
+    beta_matr = np.zeros(shape=(n,n,model_order))
+
 
     for pair in pairs:
         i, j = pair
-        p_matr[i][j] = pairwise_granger_causality(matr[i], matr[j], model_order)
+        p_matr[i][j], beta_matr[i][j] = pairwise_granger_causality(matr[i], matr[j], model_order)
 
-    return p_matr
+    return p_matr, beta_matr
 
 def join_pvalue_matrices(p_matr_a, p_matr_b):
     return p_matr_a + p_matr_b
@@ -260,18 +265,6 @@ def get_CCM_complete(X_list, Y_list, Ls, tau=1, E=3, test_indices=None, num_test
     return rhos, Ls
 
 
-def get_parser():
-    # Parse arguments
-    import argparse
-
-    description = 'Apply a pre-specified causal test to an input dataset where each row is a geene' \
-                  'and its tim points'
-    parser = argparse.ArgumentParser(description=description)
-
-
-    parser.add_argument('-i', '--input_file', required=True)
-
-    return parser
 
 
 def main():

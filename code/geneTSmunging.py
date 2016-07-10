@@ -1,17 +1,24 @@
 __author__ = 'jlu96'
 
 
-import matplotlib.pyplot as plt
+try:
+    import matplotlib as mpl
+    mpl.use('Agg')
+    import matplotlib.pyplot as plt
+    HAS_PLT = True
+except ImportError, RuntimeError:
+    HAS_PLT = False
+
 import scipy.stats as stats
 import pandas as pd
 import numpy as np
 
 def load_file_and_avg(filename, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"], fold_change=True,
-                      diff=True):
+                      diff=True, normal_diff=True):
     data = pd.read_csv(filename, sep="\t")
     num_per_key = []
     for key in keys:
-        cols = [col for col in list(data.columns.values) if col[:len(key)] == key and col != key]
+        cols = [col for col in list(data.columns.values) if col[:len(key)] == key]
         num_per_key.append(len(cols))
         print cols
         data[key] = pd.Series(sum([data[col] for col in cols]) * 1.0 / len(cols), index=data.index)
@@ -41,17 +48,17 @@ def load_file_and_avg(filename, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_"
 
 
 
-    if std_diff:
-        std_diff_keys = []
-        data["Mean_Diff"] = data[diff_keys].mean(axis=1)
-        data["Std_Diff"] = data
+    if normal_diff:
+        normal_diff_keys = []
+        data["Mean_diff"] = data[diff_keys].mean(axis=1)
+        data["Std_diff"] = data[diff_keys].std(axis=1)
 
-        for i in range(len(keys) - 1):
+        for i, diff_key in zip(range(len(keys) - 1), diff_keys):
             key1 = keys[i]
             key2 = keys[i + 1]
-            std_diff_key = key1 + "-" + key2 + " std_diff"
-            data[std_diff_key] = data[key2] - data[key1]
-            std_diff_keys.append(std_diff_key)
+            normal_diff_key = key1 + "-" + key2 + " normal_diff"
+            data[normal_diff_key] = (data[diff_key] - data["Mean_diff"])/(data["Std_diff"])
+            normal_diff_keys.append(normal_diff_key)
 
 
 
@@ -77,83 +84,158 @@ def get_gene_TS(data, genes, keys=["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5
 
     return found_genes, geneTS
 
-
-def plot_genes(data, genes, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"], title="Gene Expression From a few species",
-               num_per_keys  = np.array([4, 4, 4, 4, 4, 4, 3, 3, 4, 4, 4, 4])):
-    """Assumes dataframe has gene and time point averages` in first row."""
-    plt.figure(figsize=(12,8))
-    ax = plt.subplot(111)
-    for gene in genes:
-        # time points, average for the index, std for index
-        gene_avg = data[data['gene'] == gene][keys].values.flatten()
-        try:
-            gene_std = data[data['gene'] == gene][[key + 'std' for key in keys]].values.flatten()
-
-            plt.errorbar(range(len(keys)), gene_avg,
-                     yerr=stats.t.ppf(0.95, num_per_keys - 1) * gene_std, label=gene)
-        except KeyError:
-            plt.errorbar(range(len(keys)), gene_avg, label=gene)
-    # Shrink current axis by 20%
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-
-    # Put a legend to the right of the current axis
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-
-    plt.xlabel("Time points", fontsize=20)
-    plt.ylabel("Expression level", fontsize=20)
-    plt.title(title, fontsize=20)
-    plt.show()
-
-def plot_gene_pairs(data, gene_pairs, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"],
-                    title="Paired Gene Expression From a few species",
-               num_per_keys  = np.array([4, 4, 4, 4, 4, 4, 3, 3, 4, 4, 4, 4]), no_error = False):
-    """Assumes dataframe has gene and time point averages` in first row."""
-    colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow']
-    plt.figure(figsize=(12,8))
-    ax = plt.subplot(111)
-    for gene_pair, i in zip( gene_pairs, range(len(gene_pairs))):
-        # time points, average for the index, std for index
-
-        gene1, gene2 = gene_pair
-
-        print gene1, gene2
-        gene1_avg = data[data['gene'] == gene1][keys].values.flatten()
-        gene2_avg = data[data['gene'] == gene2][keys].values.flatten()
-        if no_error:
-            plt.errorbar(range(len(keys)), gene1_avg, label=gene1, color=colors[i])
-        else:
+if HAS_PLT:
+    def plot_genes(data, genes, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"], title="Gene Expression From a few species",
+                   num_per_keys  = np.array([4, 4, 4, 4, 4, 4, 3, 3, 4, 4, 4, 4])):
+        """Assumes dataframe has gene and time point averages` in first row."""
+        plt.figure(figsize=(12,8))
+        ax = plt.subplot(111)
+        for gene in genes:
+            # time points, average for the index, std for index
+            gene_avg = data[data['gene'] == gene][keys].values.flatten()
             try:
-                gene1_std = data[data['gene'] == gene1][[key + 'std' for key in keys]].values.flatten()
+                gene_std = data[data['gene'] == gene][[key + 'std' for key in keys]].values.flatten()
 
-                plt.errorbar(range(len(keys)), gene1_avg,
-                         yerr=stats.t.ppf(0.95, num_per_keys - 1) * gene1_std, label=gene1, color=colors[i])
+                plt.errorbar(range(len(keys)), gene_avg,
+                         yerr=stats.t.ppf(0.95, num_per_keys - 1) * gene_std, label=gene)
             except KeyError:
+                plt.errorbar(range(len(keys)), gene_avg, label=gene)
+        # Shrink current axis by 20%
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+
+        # Put a legend to the right of the current axis
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+        plt.xlabel("Time points", fontsize=20)
+        plt.ylabel("Expression level", fontsize=20)
+        plt.title(title, fontsize=20)
+        plt.show()
+
+    def plot_gene_pairs(data, gene_pairs, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"],
+                        title="Paired Gene Expression From a few species",
+                   num_per_keys  = np.array([4, 4, 4, 4, 4, 4, 3, 3, 4, 4, 4, 4]), no_error = False):
+        """Assumes dataframe has gene and time point averages` in first row."""
+        colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow']
+        plt.figure(figsize=(12,8))
+        ax = plt.subplot(111)
+        for gene_pair, i in zip( gene_pairs, range(len(gene_pairs))):
+            # time points, average for the index, std for index
+
+            gene1, gene2 = gene_pair
+
+            print gene1, gene2
+            gene1_avg = data[data['gene'] == gene1][keys].values.flatten()
+            gene2_avg = data[data['gene'] == gene2][keys].values.flatten()
+            if no_error:
                 plt.errorbar(range(len(keys)), gene1_avg, label=gene1, color=colors[i])
+            else:
+                try:
+                    gene1_std = data[data['gene'] == gene1][[key + 'std' for key in keys]].values.flatten()
 
-        if no_error:
-            plt.errorbar(range(len(keys)), gene2_avg, label=gene2, color=colors[i], linestyle='dashed')
-        else:
-            try:
-                gene2_std = data[data['gene'] == gene2][[key + 'std' for key in keys]].values.flatten()
+                    plt.errorbar(range(len(keys)), gene1_avg,
+                             yerr=stats.t.ppf(0.95, num_per_keys - 1) * gene1_std, label=gene1, color=colors[i])
+                except KeyError:
+                    plt.errorbar(range(len(keys)), gene1_avg, label=gene1, color=colors[i])
 
-                plt.errorbar(range(len(keys)), gene2_avg,
-                         yerr=stats.t.ppf(0.95, num_per_keys - 1) * gene2_std, label=gene2, color=colors[i], linestyle='dashed')
-            except KeyError:
+            if no_error:
                 plt.errorbar(range(len(keys)), gene2_avg, label=gene2, color=colors[i], linestyle='dashed')
+            else:
+                try:
+                    gene2_std = data[data['gene'] == gene2][[key + 'std' for key in keys]].values.flatten()
+
+                    plt.errorbar(range(len(keys)), gene2_avg,
+                             yerr=stats.t.ppf(0.95, num_per_keys - 1) * gene2_std, label=gene2, color=colors[i], linestyle='dashed')
+                except KeyError:
+                    plt.errorbar(range(len(keys)), gene2_avg, label=gene2, color=colors[i], linestyle='dashed')
 
 
-    # Shrink current axis by 20%
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        # Shrink current axis by 20%
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
 
-    # Put a legend to the right of the current axis
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        # Put a legend to the right of the current axis
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
-    plt.xlabel("Time points", fontsize=20)
-    plt.ylabel("Expression level", fontsize=20)
-    plt.title(title, fontsize=20)
-    plt.show()
+        plt.xlabel("Time points", fontsize=20)
+        plt.ylabel("Expression level", fontsize=20)
+        plt.title(title, fontsize=20)
+        plt.show()
+
+
+
+
+def plot_timepoint_histogram(matr, x_label="Value", title_prefix="Histogram of timepoint ", bins=30,
+                            time_names=["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"],
+                            same_axes=True, percentile_zoom = None, xlim=None, save_prefix=None, line_color_labels=None,
+                             horizontal_line_color_labels=None, ylim=None):
+    """
+    Given matr, an N x T matrix, plot the histogram of values at each timepoint t.
+    percentile_zoom: removes the tails
+    """
+
+    matr = np.array(matr)
+    T = matr.shape[1]
+
+    if time_names == None:
+        time_names = [str(t) for t in range(T)]
+
+    trans_matr = matr.T
+
+
+    if percentile_zoom != None:
+        trans_matr = []
+        for t in range(T):
+            top_percentile = stats.scoreatpercentile(matr[:, t], 100 - percentile_zoom)
+            bottom_percentile = stats.scoreatpercentile(matr[:, t], percentile_zoom)
+
+            new_array = matr[:,t]
+            new_indices = np.where((new_array < top_percentile) & (new_array > bottom_percentile))[0]
+            trans_matr.append(new_array[new_indices])
+
+        trans_matr = np.array(trans_matr)
+
+    if same_axes:
+        if not xlim:
+            min_value = np.min(np.concatenate(tuple(trans_matr)))
+            max_value = np.max(np.concatenate(tuple(trans_matr)))
+        else:
+            min_value = xlim[0]
+            max_value = xlim[1]
+        bins = np.linspace(min_value, max_value, bins)
+        print bins
+
+    figs = []
+    for t, time_name in zip(range(T), time_names):
+        title = title_prefix + time_name
+        fig = plt.figure(figsize=(8,8))
+        plt.hist(trans_matr[t], bins=bins)
+
+        plt.title(title, fontsize=20)
+        plt.xlabel(x_label, fontsize=20)
+        plt.ylabel("Frequency", fontsize=20)
+        if line_color_labels != None:
+            for line, color, label in line_color_labels:
+                plt.axvline(line, color=color,label=label)
+            plt.legend(loc='best')
+
+        if horizontal_line_color_labels !=None:
+            for line, color, label in horizontal_line_color_labels:
+                plt.axhline(line, color=color,label=label)
+            plt.legend(loc='best')
+
+
+        if save_prefix:
+            filename = save_prefix + time_name
+            fig.savefig(filename)
+        figs.append(fig)
+        plt.show()
+
+    if save_prefix:
+        print "All images saved with prefix:", save_prefix
+
+    return figs
+
 
 
 
@@ -218,3 +300,22 @@ def randomize_geneTS(geneTS, replace=False, num_genes=None, by_time=True):
         newgeneTS = newTbyG.T
 
         return newgeneTS
+
+def make_and_save_randomized_data(data, filename=None, keys = ["t00", "t05", "t1_", "t2_", "t3_", "t4_", "t5_", "t6_", "t7_", "t8_", "t10_", "t12_"],
+                                  ):
+    genes, geneTS = get_gene_TS(data, data["gene"])
+    rand_geneTS = randomize_geneTS(geneTS)
+
+    rand_data_dict = {}
+    rand_data_dict['gene'] = data['gene'].values
+    for i, key in zip(range(len(keys)), keys):
+        rand_data_dict[key] = rand_geneTS[:, i]
+    rand_data = pd.DataFrame(data=rand_data_dict, columns=["gene"] + keys)
+
+    if filename == None:
+        print "Randomized not written"
+    else:
+        rand_data.to_csv(filename, sep='\t', index=False)
+        print "Randomized written to ", filename
+
+    return rand_data
