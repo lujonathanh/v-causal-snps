@@ -7,31 +7,7 @@ import sys
 import csv
 import pickle
 import numpy as np
-
-
-def array_to_matr(array):
-    # Assume the list is of shape (nrows * nrows, nobs)
-
-
-    array = np.array(array)
-    length = array.shape[0]
-    nrow = np.sqrt(length)
-
-
-    print "array shape is ", array.shape
-    print "nrow is ", nrow
-
-    if len(array.shape) > 1:
-        final_shape = (nrow, nrow) + (array.shape[1:])
-    else:
-        final_shape = (nrow, nrow)
-
-    print "Final shape is ", final_shape
-
-    matr = array.reshape(final_shape)
-
-    return matr
-
+import pandas as pd
 
 
 
@@ -42,16 +18,15 @@ def get_parser():
     description = 'Integrate output to a pickle file.'
     parser = argparse.ArgumentParser(description=description)
 
-    parser.add_argument('-n', '--num_genes', required=True, type=int)
+    parser.add_argument('-i', '--output_dfname', required=True)
 
-    parser.add_argument('-i', '--output_listname', default="output_list.txt")
+    parser.add_argument('-t', '--type', required=True, help="Args.type must be m (matrix) or d (pandas dataframe)")
+    # if "m", then pickle
+    # if "d", then pandas
 
-    parser.add_argument('-o', '--integrated_filename', required=True)
+    parser.add_argument('-a', '--axis', type=int, default = -1)
 
-    parser.add_argument('-p_pos', type=int, default=0)
-
-    parser.add_argument('-p_add', type=int, default=0)
-
+    parser.add_argument('-o', '--int_name_dfname', required=True)
     return parser
 
 
@@ -61,45 +36,58 @@ def run(args):
 
     # load the data
 
-    filenames = []
-    with open(args.output_listname, 'rU') as csvfile:
-        reader = csv.reader(csvfile, delimiter='\t')
-        for row in reader:
-            filenames.append(row[0])
+    output_df = pd.read_csv(args.output_dfname, sep="\t")
+    int_name_df = pd.read_csv(args.int_name_dfname, sep="\t")
+    print int_name_df.head()
 
-    print "Files to integrate are ", filenames
+    assert set(output_df.columns.values) == set(int_name_df.columns.values)
 
-    output_tuples = []
+    for x in output_df:
+        filenames = output_df[x].values
 
-    for filename in filenames:
-        output_tuple = pickle.load(open(filename, 'rU'))
-        output_tuples.append(output_tuple)
+        print
+        print x
+        print "Files to integrate are ", filenames
+        integrated_filename = int_name_df[x].values[0]
+        print "Integrated_file is ", integrated_filename
 
-    output_lists = zip(*output_tuples)
 
-    pre_integrated_list = [np.concatenate(output_entry) for output_entry in output_lists]
+        if args.type == "m":
 
-    integrated_list = []
-    for entry in pre_integrated_list:
-        integrated_list.append(array_to_matr(entry))
+            if args.axis == -1:
+                raise ValueError("You must set the axis of concatenation for the matrices.")
 
-    for entry, i in zip(integrated_list, range(len(integrated_list))):
-        print "Shape of entry ", i, " is ", entry.shape
+            all_matrs = []
+            for filename in filenames:
+                all_matrs.append(pickle.load(open(filename, 'rU')))
 
-    print "Args.p_add is ", args.p_add
-    print "Args.p_add is ", args.p_add
+            integrated_matr = np.concatenate(tuple(all_matrs), axis=args.axis)
 
-    if args.p_add:
-        print "Adding ones to p-matr at location ", args.p_pos
-        p_matr = integrated_list[args.p_pos]
-        p_matr += np.diagflat(np.ones(p_matr.shape[0]))
-        integrated_list = integrated_list[0:args.p_pos] + [p_matr,] + integrated_list[args.p_pos + 1:]
+            print "Final matrix shape", integrated_matr.shape
 
-    with open(args.integrated_filename, 'w') as outfile:
+            with open(integrated_filename, 'w') as outfile:
+                pickle.dump(integrated_matr, outfile)
 
-        pickle.dump(integrated_list, outfile)
+            print "Integrated matr written to ", integrated_filename
 
-    print "Integrated written to ", args.integrated_filename
+
+        elif args.type == "d":
+            all_dfs = []
+            for filename in filenames:
+                all_dfs.append(pd.read_csv(filename, sep="\t"))
+
+            integrated_df = pd.concat(all_dfs)
+
+            print "Final df shape:", integrated_df.shape
+
+            integrated_df.to_csv(integrated_filename, sep="\t", index=False)
+
+            print "Integrated df written to ", integrated_filename
+
+        else:
+            raise ValueError("Args.type must be m (matrix) or d (pandas dataframe)")
+
+
 
 def main():
     run(get_parser().parse_args(sys.argv[1:]))
